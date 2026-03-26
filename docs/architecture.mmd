@@ -1,0 +1,21 @@
+flowchart TD
+    A[CLI: post / range / migrate] --> B[Pipeline]
+    B --> C[Danbooru API<br/>post json]
+    C --> D[source_posts]
+    B --> E[Prompt Builder<br/>prompt + schema + fingerprint]
+    E --> F{caption_cache<br/>fingerprint hit?}
+    B --> G[caption_jobs]
+    F -->|yes| H[caption_results<br/>upsert latest result]
+    F -->|no| I[ditto-core runtime frontdoor<br/>build_language_model -> L0 LanguageModel]
+    I --> J[OpenAI Responses API<br/>input_text + input_image URL]
+    J --> K[OpenAI prompt cache<br/>prompt_cache_key]
+    J --> M[Structured JSON output]
+    M --> F
+    M --> H
+    H --> L[stdout / downstream reader]
+
+    style F fill:#f7f3d1,stroke:#7a6b00,color:#111
+    style I fill:#e7e1fb,stroke:#5b43a8,color:#111
+    style J fill:#dceefc,stroke:#276fbf,color:#111
+    style H fill:#def7e5,stroke:#2c7a4b,color:#111
+    style G fill:#fde2e2,stroke:#b23b3b,color:#111

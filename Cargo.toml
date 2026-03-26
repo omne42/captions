@@ -1,0 +1,30 @@
+[package]
+name = "captions"
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = "deny"
+
+[dependencies]
+clap = { version = "4", features = ["derive", "env"] }
+config-kit = { path = "../omne_foundation/crates/config-kit" }
+ditto-core = { path = "../ditto-llm/crates/ditto-core", default-features = false, features = ["provider-openai", "cap-llm"] }
+futures = "0.3"
+http-kit = { path = "../omne_foundation/crates/http-kit" }
+omne-integrity-primitives = { path = "../omne-runtime/crates/omne-integrity-primitives" }
+reqwest = { version = "0.12", default-features = false, features = ["json", "stream", "rustls-tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.8", default-features = false, features = ["runtime-tokio-rustls", "postgres", "json", "migrate", "macros"] }
+thiserror = "1"
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+
+[dev-dependencies]
+tempfile = "3"
