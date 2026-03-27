@@ -116,14 +116,14 @@ impl OpenAiClient {
             response_json,
             caption,
             usage: TokenUsage {
-                input_tokens: generated.response.usage.input_tokens.unwrap_or_default() as u32,
+                input_tokens: generated.response.usage.input_tokens.unwrap_or_default(),
                 cached_tokens: generated
                     .response
                     .usage
                     .cache_input_tokens
-                    .unwrap_or_default() as u32,
-                output_tokens: generated.response.usage.output_tokens.unwrap_or_default() as u32,
-                total_tokens: generated.response.usage.total_tokens.unwrap_or_default() as u32,
+                    .unwrap_or_default(),
+                output_tokens: generated.response.usage.output_tokens.unwrap_or_default(),
+                total_tokens: generated.response.usage.total_tokens.unwrap_or_default(),
             },
         })
     }
