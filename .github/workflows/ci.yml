@@ -1,0 +1,55 @@
+name: ci
+
+on:
+  push:
+    branches:
+      - main
+      - "ci/**"
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout captions
+        uses: actions/checkout@v6
+        with:
+          path: captions
+
+      - name: Checkout omne_foundation
+        uses: actions/checkout@v6
+        with:
+          repository: omne42/omne_foundation
+          path: omne_foundation
+          token: ${{ secrets.OMNE_REPO_READ_TOKEN || github.token }}
+
+      - name: Checkout ditto-llm
+        uses: actions/checkout@v6
+        with:
+          repository: omne42/ditto-llm
+          path: ditto-llm
+          token: ${{ secrets.OMNE_REPO_READ_TOKEN || github.token }}
+
+      - name: Checkout omne-runtime
+        uses: actions/checkout@v6
+        with:
+          repository: omne42/omne-runtime
+          path: omne-runtime
+          token: ${{ secrets.OMNE_REPO_READ_TOKEN || github.token }}
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Rust fmt
+        working-directory: captions
+        run: cargo fmt -- --check
+
+      - name: Rust test
+        working-directory: captions
+        run: cargo test
+
+      - name: Rust clippy
+        working-directory: captions
+        run: cargo clippy --all-targets -- -D warnings
