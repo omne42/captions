@@ -20,6 +20,8 @@ pub enum AppError {
     Io(#[from] std::io::Error),
     #[error("invalid config: {0}")]
     Config(String),
+    #[error("invalid token usage: {0}")]
+    InvalidTokenUsage(String),
     #[error("source post {0} not found")]
     SourceNotFound(i64),
     #[error("source post {post_id} has no usable image url")]

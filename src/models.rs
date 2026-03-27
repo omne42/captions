@@ -104,10 +104,10 @@ impl CaptionPayload {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct TokenUsage {
-    pub input_tokens: u32,
-    pub cached_tokens: u32,
-    pub output_tokens: u32,
-    pub total_tokens: u32,
+    pub input_tokens: u64,
+    pub cached_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -178,14 +178,19 @@ pub struct RangeStats {
 }
 
 impl RangeStats {
-    pub fn new(start_id: i64, end_id: i64) -> Self {
+    pub fn new(start_id: i64, end_id: i64) -> Result<Self> {
         let total = if end_id >= start_id {
-            (end_id - start_id + 1) as u64
+            let span = i128::from(end_id) - i128::from(start_id) + 1;
+            u64::try_from(span).map_err(|_| {
+                AppError::Config(format!(
+                    "range {start_id}..={end_id} is too large to represent safely"
+                ))
+            })?
         } else {
             0
         };
 
-        Self {
+        Ok(Self {
             start_id,
             end_id,
             total,
@@ -193,7 +198,7 @@ impl RangeStats {
             failed: 0,
             cache_hits: 0,
             openai_calls: 0,
-        }
+        })
     }
 
     pub fn record_success(&mut self, cache_source: CacheSource) {
@@ -235,5 +240,22 @@ fn normalize_url(url: &str) -> String {
         format!("{DANBOORU_HOST}{url}")
     } else {
         format!("{DANBOORU_HOST}/{url}")
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RangeStats;
+
+    #[test]
+    fn range_stats_new_rejects_full_i64_span_overflow() {
+        let err = RangeStats::new(i64::MIN, i64::MAX).expect_err("full i64 span must fail");
+        assert!(err.to_string().contains("too large"));
+    }
+
+    #[test]
+    fn range_stats_new_counts_regular_range() {
+        let stats = RangeStats::new(7, 9).expect("regular range should succeed");
+        assert_eq!(stats.total, 3);
     }
 }

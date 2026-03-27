@@ -43,11 +43,23 @@ impl Pipeline {
             .create_job(post_id, &prompt.fingerprint, &self.config)
             .await?;
 
-        if let Some(cached) = self.store.find_cached_caption(&prompt.fingerprint).await? {
-            self.store
+        let cached = match self.store.find_cached_caption(&prompt.fingerprint).await {
+            Ok(cached) => cached,
+            Err(err) => return self.fail_job(job_id, err).await,
+        };
+
+        if let Some(cached) = cached {
+            if let Err(err) = self
+                .store
                 .upsert_result_from_cache(&cached, CacheSource::LocalPg)
-                .await?;
-            self.store.mark_job_success(job_id, true).await?;
+                .await
+            {
+                return self.fail_job(job_id, err).await;
+            }
+            if let Err(err) = self.store.mark_job_success(job_id, true).await {
+                self.persist_job_failure(job_id, &err).await;
+                return Err(err);
+            }
 
             return Ok(CaptionOutcome {
                 post_id: cached.post_id,
@@ -67,10 +79,7 @@ impl Pipeline {
             .await
         {
             Ok(generation) => generation,
-            Err(err) => {
-                self.best_effort_mark_failure(job_id, &err);
-                return Err(err);
-            }
+            Err(err) => return self.fail_job(job_id, err).await,
         };
 
         if let Err(err) = self
@@ -78,11 +87,13 @@ impl Pipeline {
             .save_generation(&source_post, &prompt, &self.config, &generation)
             .await
         {
-            self.best_effort_mark_failure(job_id, &err);
-            return Err(err);
+            return self.fail_job(job_id, err).await;
         }
 
-        self.store.mark_job_success(job_id, false).await?;
+        if let Err(err) = self.store.mark_job_success(job_id, false).await {
+            self.persist_job_failure(job_id, &err).await;
+            return Err(err);
+        }
 
         Ok(CaptionOutcome {
             post_id: source_post.post_id,
@@ -108,17 +119,15 @@ impl Pipeline {
             ));
         }
 
-        let mut stats = RangeStats::new(start_id, end_id);
-        let results = stream::iter(start_id..=end_id)
+        let mut stats = RangeStats::new(start_id, end_id)?;
+        let mut results = stream::iter(start_id..=end_id)
             .map(|post_id| {
                 let pipeline = self.clone();
                 async move { pipeline.caption_post(post_id).await }
             })
-            .buffer_unordered(concurrency.max(1))
-            .collect::<Vec<_>>()
-            .await;
+            .buffer_unordered(concurrency.max(1));
 
-        for result in results {
+        while let Some(result) = results.next().await {
             match result {
                 Ok(outcome) => {
                     if outcome.cache_source == CacheSource::LocalPg.as_str() {
@@ -137,14 +146,14 @@ impl Pipeline {
         Ok(stats)
     }
 
-    fn best_effort_mark_failure(&self, job_id: i64, err: &AppError) {
-        let store = self.store.clone();
-        let message = err.to_string();
+    async fn fail_job<T>(&self, job_id: i64, err: AppError) -> Result<T> {
+        self.persist_job_failure(job_id, &err).await;
+        Err(err)
+    }
 
-        tokio::spawn(async move {
-            if let Err(mark_err) = store.mark_job_failure(job_id, &message).await {
-                error!(job_id, error = %mark_err, "failed to persist failed job");
-            }
-        });
+    async fn persist_job_failure(&self, job_id: i64, err: &AppError) {
+        if let Err(mark_err) = self.store.mark_job_failure(job_id, &err.to_string()).await {
+            error!(job_id, error = %mark_err, "failed to persist failed job");
+        }
     }
 }

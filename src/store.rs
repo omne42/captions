@@ -3,7 +3,7 @@ use sqlx::postgres::PgPoolOptions;
 use sqlx::types::Json;
 
 use crate::config::AppConfig;
-use crate::error::Result;
+use crate::error::{AppError, Result};
 use crate::models::{
     CacheSource, CachedCaption, CaptionPayload, OpenAiGeneration, PromptBundle, SourcePost,
     TokenUsage,
@@ -164,10 +164,10 @@ impl PostgresStore {
             image_url: row.try_get("image_url")?,
             caption,
             usage: TokenUsage {
-                input_tokens: row.try_get::<i32, _>("input_tokens")? as u32,
-                cached_tokens: row.try_get::<i32, _>("cached_tokens")? as u32,
-                output_tokens: row.try_get::<i32, _>("output_tokens")? as u32,
-                total_tokens: row.try_get::<i32, _>("total_tokens")? as u32,
+                input_tokens: decode_token_usage(row.try_get("input_tokens")?, "input_tokens")?,
+                cached_tokens: decode_token_usage(row.try_get("cached_tokens")?, "cached_tokens")?,
+                output_tokens: decode_token_usage(row.try_get("output_tokens")?, "output_tokens")?,
+                total_tokens: decode_token_usage(row.try_get("total_tokens")?, "total_tokens")?,
             },
         }))
     }
@@ -240,10 +240,22 @@ impl PostgresStore {
         .bind(Json(generation.request_json.clone()))
         .bind(Json(generation.response_json.clone()))
         .bind(Json(serde_json::to_value(&generation.caption)?))
-        .bind(generation.usage.input_tokens as i32)
-        .bind(generation.usage.cached_tokens as i32)
-        .bind(generation.usage.output_tokens as i32)
-        .bind(generation.usage.total_tokens as i32)
+        .bind(encode_token_usage(
+            generation.usage.input_tokens,
+            "input_tokens",
+        )?)
+        .bind(encode_token_usage(
+            generation.usage.cached_tokens,
+            "cached_tokens",
+        )?)
+        .bind(encode_token_usage(
+            generation.usage.output_tokens,
+            "output_tokens",
+        )?)
+        .bind(encode_token_usage(
+            generation.usage.total_tokens,
+            "total_tokens",
+        )?)
         .bind(generation.response_id.as_deref())
         .execute(&mut *tx)
         .await?;
@@ -315,5 +327,34 @@ impl PostgresStore {
         .await?;
 
         Ok(())
+    }
+}
+
+fn encode_token_usage(value: u64, field: &str) -> Result<i64> {
+    i64::try_from(value).map_err(|_| {
+        AppError::InvalidTokenUsage(format!("{field} exceeds PostgreSQL BIGINT range: {value}"))
+    })
+}
+
+fn decode_token_usage(value: i64, field: &str) -> Result<u64> {
+    u64::try_from(value)
+        .map_err(|_| AppError::InvalidTokenUsage(format!("{field} must not be negative: {value}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{decode_token_usage, encode_token_usage};
+
+    #[test]
+    fn encode_token_usage_rejects_values_above_i64_max() {
+        let err = encode_token_usage(i64::MAX as u64 + 1, "total_tokens")
+            .expect_err("value above bigint should fail");
+        assert!(err.to_string().contains("BIGINT"));
+    }
+
+    #[test]
+    fn decode_token_usage_rejects_negative_database_values() {
+        let err = decode_token_usage(-1, "total_tokens").expect_err("negative value must fail");
+        assert!(err.to_string().contains("must not be negative"));
     }
 }
